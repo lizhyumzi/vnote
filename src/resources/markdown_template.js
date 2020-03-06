@@ -30,7 +30,7 @@ var VPreviewMode = false;
 if (typeof VEnableMermaid == 'undefined') {
     VEnableMermaid = false;
 } else if (VEnableMermaid) {
-    mermaidAPI.initialize({
+    mermaid.initialize({
         startOnLoad: false
     });
 }
@@ -608,22 +608,7 @@ document.onkeydown = function(e) {
     }
 };
 
-var mermaidParserErr = false;
 var mermaidIdx = 0;
-
-if (VEnableMermaid) {
-    mermaidAPI.parseError = function(err, hash) {
-        content.setLog("err: " + err);
-        mermaidParserErr = true;
-
-        // Clean the container element, or mermaidAPI won't render the graph with
-        // the same id.
-        var errGraph = document.getElementById('mermaid-diagram-' + mermaidIdx);
-        var parentNode = errGraph.parentElement;
-        parentNode.outerHTML = '';
-        delete parentNode;
-    };
-}
 
 // @className, the class name of the mermaid code block, such as 'lang-mermaid'.
 var renderMermaid = function(className) {
@@ -648,17 +633,26 @@ var renderMermaid = function(className) {
 // Returns true if succeeded.
 var renderMermaidOne = function(code) {
     // Mermaid code block.
-    mermaidParserErr = false;
     mermaidIdx++;
     try {
         // Do not increment mermaidIdx here.
-        var graph = mermaidAPI.render('mermaid-diagram-' + mermaidIdx, code.textContent, function(){});
+        var graph = mermaid.render('mermaid-diagram-' + mermaidIdx,
+                                   code.textContent,
+                                   function(){});
     } catch (err) {
         content.setLog("err: " + err);
+        // Clean the container element, or mermaid won't render the graph with
+        // the same id.
+        var errGraph = document.getElementById('mermaid-diagram-' + mermaidIdx);
+        if (errGraph) {
+            var parentNode = errGraph.parentElement;
+            parentNode.outerHTML = '';
+            delete parentNode;
+        }
         return false;
     }
 
-    if (mermaidParserErr || typeof graph == "undefined") {
+    if (typeof graph == "undefined") {
         return false;
     }
 
@@ -1275,6 +1269,7 @@ var renderCodeBlockLineNumber = function() {
 
 var addClassToCodeBlock = function() {
     var codes = document.getElementsByTagName('code');
+    var mathCodes = [];
     for (var i = 0; i < codes.length; ++i) {
         var code = codes[i];
         var pare = code.parentElement;
@@ -1284,12 +1279,19 @@ var addClassToCodeBlock = function() {
             if (VEnableMathjax
                 && (code.classList.contains("lang-mathjax")
                     || code.classList.contains("language-mathjax"))) {
-                // Add the class to pre.
-                pare.classList.add("lang-mathjax");
-                pare.classList.add("language-mathjax");
-                pare.classList.add("tex-to-render");
+                mathCodes.push(code);
             }
         }
+    }
+
+    // Replace math codes with <x-eqn>.
+    for (var i = mathCodes.length - 1; i >= 0; --i) {
+        var code = mathCodes[i];
+        var pare = code.parentElement;
+        var xeqn = document.createElement('x-eqn');
+        xeqn.classList.add("tex-to-render");
+        xeqn.innerHTML = code.innerHTML;
+        pare.parentNode.replaceChild(xeqn, pare);
     }
 };
 
@@ -1391,7 +1393,7 @@ var getHtmlWithInlineStyles = function(container) {
 // Will be called after MathJax rendering finished.
 // Make <pre><code>math</code></pre> to <p>math</p>
 var postProcessMathJax = function() {
-    var all = MathJax.Hub.getAllJax();
+    var all = Array.from(MathJax.startup.document.math);
     for (var i = 0; i < all.length; ++i) {
         var node = all[i].SourceElement().parentNode;
         if (VRemoveMathjaxScript) {
